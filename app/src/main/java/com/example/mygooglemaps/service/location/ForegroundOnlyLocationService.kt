@@ -83,7 +83,7 @@ class ForegroundOnlyLocationService : LifecycleService() {
                             )*/
                         }
                         lastLocation = locationModel
-                        sendUpdateLocation(locationModel)
+//                        sendUpdateLocation(locationModel)
                     } else {
                        /* Log.i(TAG, "location ignored")*/
                         lastLocation?.let {

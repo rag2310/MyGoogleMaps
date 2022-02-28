@@ -7,10 +7,12 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.location.Location
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
+import android.widget.Button
 import androidx.activity.viewModels
 import androidx.core.app.ActivityCompat
 import androidx.core.view.WindowCompat
@@ -19,6 +21,8 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.mygooglemaps.R
+import com.example.mygooglemaps.model.googlemap.Distance
+import com.example.mygooglemaps.model.googlemap.Step
 import com.example.mygooglemaps.service.location.ForegroundOnlyLocationService
 import com.example.mygooglemaps.ui.layers.MyLocationLayer
 import com.example.mygooglemaps.utils.Converts
@@ -27,6 +31,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.PolylineOptions
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -36,9 +41,11 @@ import java.util.*
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
+    private var isFirst: Boolean = true
     private var foregroundOnlyLocationServiceBound = false
     private var foregroundOnlyLocationService: ForegroundOnlyLocationService? = null
     private lateinit var myLocationLayer: MyLocationLayer
+    private var newDistance: Int? = null
 
     private val foregroundOnlyServiceConnection = object : ServiceConnection {
 
@@ -60,6 +67,10 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private val mainViewModel: MainViewModel by viewModels()
 
     private lateinit var mMap: GoogleMap
+    private var myLocation: LatLng? = null
+    private var steps: MutableList<Step> = mutableListOf()
+    private var currentStep = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -73,6 +84,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
         createObs()
         checkPermission()
+
+//        val button = findViewById<Button>(R.id.getDirections)
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
@@ -122,14 +135,20 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 launch {
                     mainViewModel.location.collect {
                         if (it.isNotEmpty()) {
-                            Log.i(
-                                MainActivity::class.java.simpleName,
-                                "latitude ${it[0].latitude}} long ${it[0].longitude}, time ${Date()}"
-                            )
                             val driverLocation = LatLng(it[0].latitude, it[0].longitude)
                             myLocationLayer.marker(locationEntity = it[0])
-                            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(driverLocation, 18.0f))
-                            //mainViewModel.getDirectionsLocation(locationEntity = it[0])
+                            mMap.moveCamera(
+                                CameraUpdateFactory.newLatLngZoom(
+                                    driverLocation,
+                                    18.0f
+                                )
+                            )
+                            if (isFirst) {
+                                mainViewModel.getDirectionsLocation(locationEntity = it[0])
+                                isFirst = false
+                            }
+                            myLocation = driverLocation
+                            getStep()
                         }
                     }
                 }
@@ -141,14 +160,60 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                                 is MainUiState.Success -> {
                                     uiState.directions?.let {
                                         Log.i(
-                                            MainActivity::class.java.simpleName,
-                                            "polyline ${it.routes[0].overviewPolyline.points},\ntime: ${Date()}"
+                                            "MyLocationLayer",
+                                            "mylocation ${myLocation!!.latitude},${myLocation!!.longitude}"
                                         )
+                                        if (it.routes.isNotEmpty()) {
+                                            val legs = it.routes[0].legs
+                                            val leg = legs[0]
+                                            steps.addAll(leg.steps)
+                                            myLocationLayer.drawPolyline(leg.steps)
+                                            getStep()
+                                        }
                                     }
                                 }
                                 is MainUiState.Error -> {}
                             }
                         }
+                }
+            }
+        }
+    }
+
+    private fun getStep() {
+        if (steps.isNotEmpty()) {
+            if (currentStep <= steps.size) {
+                val step = steps[currentStep]
+                val distance = FloatArray(1)
+                myLocation?.let {
+                    myLocationLayer.markerDestiny(
+                        LatLng(
+                            step.endLocation.lat,
+                            step.endLocation.lng
+                        )
+                    )
+                    Location.distanceBetween(
+                        it.latitude,
+                        it.longitude,
+                        step.endLocation.lat,
+                        step.endLocation.lng,
+                        distance
+                    )
+                    if (newDistance == null) {
+                        newDistance = steps[currentStep].distance.value
+                        Log.i(TAG, "newDistance $newDistance")
+                    }
+
+                    Log.i(TAG, "distance ${distance[0]}")
+                    if (currentStep + 1 <= steps.size) {
+                        Log.i(TAG, "maneuver ${steps[currentStep + 1].maneuver}")
+                    }
+
+                    if (distance[0] > 0 && distance[0] < 6f) {
+                        currentStep += 1
+                        newDistance = steps[currentStep + 1].distance.value
+                        Log.i(TAG, "newDistance $newDistance")
+                    }
                 }
             }
         }
@@ -211,5 +276,6 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private companion object {
         private const val PERMISSIONS_REQUEST = 99
+        private val TAG = MainActivity::class.java.simpleName
     }
 }

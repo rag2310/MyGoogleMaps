@@ -3,6 +3,8 @@ package com.example.mygooglemaps.di
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import com.example.mygooglemaps.MyGoogleMapsApplication
+import com.example.mygooglemaps.service.locationflow.SharedLocationManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,4 +23,10 @@ object AppModule {
             context.packageName,
             PackageManager.GET_META_DATA
         ).metaData
+
+    @Provides
+    @Singleton
+    fun provideSharedLocationManager(@ApplicationContext context: Context): SharedLocationManager =
+        SharedLocationManager(context,
+            (context.applicationContext as MyGoogleMapsApplication).applicationScope)
 }
